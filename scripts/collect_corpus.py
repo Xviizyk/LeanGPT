@@ -2,10 +2,14 @@
 from __future__ import annotations
 import io
 import os
+import sys
 import tarfile
 import time
 from pathlib import Path
 import requests
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from leangpt.config import load_config
 
 GITHUB_API = "https://api.github.com"
 
@@ -85,7 +89,10 @@ def build_corpus(
 
 
 if __name__ == "__main__":
-    token = os.environ.get("GITHUB_TOKEN")
+    cfg = load_config()
+    token = cfg.github_token or os.environ.get("GITHUB_TOKEN")
     if not token:
-        raise SystemExit("Установи переменную окружения GITHUB_TOKEN")
+        raise SystemExit(
+            "No GitHub token found. Set github_token in config.local.yaml or export GITHUB_TOKEN."
+        )
     build_corpus(token)

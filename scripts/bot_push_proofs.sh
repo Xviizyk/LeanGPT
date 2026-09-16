@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+read_config_value() {
+  local key="$1"
+  if [[ -f config.local.yaml ]]; then
+    grep "^${key}:" config.local.yaml | sed "s/^${key}: *//" | tr -d '\r'
+  fi
+}
+
+PROOFS_REPO="${PROOFS_REPO:-$(read_config_value proofs_repo)}"
+
 if [[ -z "${PROOFS_REPO:-}" ]]; then
-  echo "Set PROOFS_REPO"; exit 1
+  echo "Set PROOFS_REPO (env var or proofs_repo in config.local.yaml)"; exit 1
 fi
 
 WORKDIR="proofs_dump_repo"
