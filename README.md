@@ -49,6 +49,10 @@ python scripts/run_pipeline.py
 
 The last command runs the actual self-play loop — a curriculum of increasingly hard lemmas, GRPO-style reinforcement from the REPL's pass/fail signal, and a live dashboard showing tokens/sec and success rate as it goes.
 
+## Hardware
+
+No Nvidia GPU required. `pick_device()` in `leangpt/device.py` picks CUDA if you have an Nvidia card, Apple Silicon's MPS backend on an M-series Mac, or plain CPU otherwise — pretraining and generation both run on any of the three. CPU-only will be slow for pretraining a transformer from scratch, but it isn't a hard requirement.
+
 ## How it's built
 
 - **Model** — a small decoder-only transformer built from scratch: RoPE, RMSNorm, SwiGLU, `scaled_dot_product_attention`, KV-cache for generation.

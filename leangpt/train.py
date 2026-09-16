@@ -3,6 +3,7 @@ from pathlib import Path
 import torch
 from tokenizers import ByteLevelBPETokenizer
 from torch.utils.data import DataLoader, Dataset
+from .device import pick_device
 from .model import LeanGPT, ModelConfig
 from .schedules import lr_schedule
 
@@ -42,11 +43,13 @@ def train(
     epochs: int = 3,
     base_lr: float = 0.0003,
     warmup_frac: float = 0.05,
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    device: str | None = None,
 ) -> None:
+    device = device or pick_device()
     tokenizer = ByteLevelBPETokenizer(
         f"{tokenizer_dir}/vocab.json", f"{tokenizer_dir}/merges.txt"
     )
+    print(f"device: {device}")
     print("Токенизация корпуса...")
     ids = load_corpus_ids(corpus_dir, tokenizer)
     print(f"Всего токенов в корпусе: {len(ids)}")
@@ -57,8 +60,10 @@ def train(
     if device == "cuda":
         model = torch.compile(model)
     optim = torch.optim.AdamW(model.parameters(), lr=base_lr)
+
     use_amp = device == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+
     total_steps = max(1, len(loader) * epochs)
     warmup_steps = max(1, int(total_steps * warmup_frac))
     Path(out_dir).mkdir(parents=True, exist_ok=True)
@@ -69,14 +74,18 @@ def train(
             lr = lr_schedule(step, total_steps, base_lr, warmup_steps)
             for g in optim.param_groups:
                 g["lr"] = lr
-            with torch.autocast(
-                device_type="cuda", dtype=torch.bfloat16, enabled=use_amp
-            ):
+            if use_amp:
+                with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                    _, loss, _ = model(x, y)
+                optim.zero_grad()
+                scaler.scale(loss).backward()
+                scaler.step(optim)
+                scaler.update()
+            else:
                 _, loss, _ = model(x, y)
-            optim.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
+                optim.zero_grad()
+                loss.backward()
+                optim.step()
             if step % 50 == 0:
                 print(f"epoch {epoch} step {step} lr {lr:.2e} loss {loss.item():.4f}")
             step += 1

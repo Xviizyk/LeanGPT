@@ -1,8 +1,9 @@
 from __future__ import annotations
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import torch
 from tokenizers import ByteLevelBPETokenizer
+from .device import pick_device
 from .model import LeanGPT, ModelConfig
 
 
@@ -14,7 +15,7 @@ class GenConfig:
     temperature: float = 0.9
     top_p: float = 0.95
     num_candidates: int = 8
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    device: str = field(default_factory=pick_device)
 
 
 class LeanGenerator:
