@@ -1,26 +1,4 @@
 #!/usr/bin/env python3
-"""
-Экспорт доказанных теорем из data/results.jsonl в структуру .lean файлов,
-пригодную для отдельного репозитория-"библиотеки доказательств".
-
-Использует store.iter_balanced() — то есть уже с ограничением на число
-вариантов доказательства одной теоремы и на сигнатуру тактик, чтобы в
-репозиторий не улетела тысяча дублирующих по духу файлов.
-
-Структура вывода:
-    proof_library/
-      Level0/
-        const_add_3_5.lean
-        const_add_3_5__v2.lean   # второй найденный путь к той же теореме
-      Level1/
-        add_comm_0.lean
-      ...
-      README.md   # авто-сгенерированная сводка (сколько теорем, статистика)
-
-Запуск:
-    python scripts/export_proofs.py --out proof_library
-"""
-
 import argparse
 import re
 import sys
@@ -28,15 +6,11 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from lean4gen.store import JsonlStore, tactic_signature
 
 
 def guess_level(statement: str) -> str:
-    """Грубая эвристика уровня по имени теоремы (curriculum.py именует
-    теоремы предсказуемо: const_add_*, add_comm_*, and_comm_*, list_len_*,
-    nat_add_zero_ind_* и т.п.). Для теорем не из curriculum -> "Custom"."""
-    name_match = re.search(r"theorem\s+(\S+)", statement)
+    name_match = re.search("theorem\\s+(\\S+)", statement)
     name = name_match.group(1) if name_match else ""
     if name.startswith("const_"):
         return "Level0_Constants"
@@ -52,34 +26,33 @@ def guess_level(statement: str) -> str:
 
 
 def safe_filename(statement: str) -> str:
-    name_match = re.search(r"theorem\s+(\S+)", statement)
+    name_match = re.search("theorem\\s+(\\S+)", statement)
     name = name_match.group(1) if name_match else "unnamed"
-    return re.sub(r"[^A-Za-z0-9_]", "_", name)
+    return re.sub("[^A-Za-z0-9_]", "_", name)
 
 
-def export(results_path: str, out_dir: str, max_per_signature: int, max_per_statement: int) -> None:
+def export(
+    results_path: str, out_dir: str, max_per_signature: int, max_per_statement: int
+) -> None:
     store = JsonlStore(results_path)
     out_root = Path(out_dir)
     out_root.mkdir(parents=True, exist_ok=True)
-
     name_counts: dict[str, int] = defaultdict(int)
     level_counts: dict[str, int] = defaultdict(int)
     total = 0
-
-    for rec in store.iter_balanced(max_per_signature=max_per_signature, max_per_statement=max_per_statement):
+    for rec in store.iter_balanced(
+        max_per_signature=max_per_signature, max_per_statement=max_per_statement
+    ):
         level = guess_level(rec["statement"])
         level_dir = out_root / level
         level_dir.mkdir(parents=True, exist_ok=True)
-
         base_name = safe_filename(rec["statement"])
         name_counts[base_name] += 1
         suffix = "" if name_counts[base_name] == 1 else f"__v{name_counts[base_name]}"
         file_path = level_dir / f"{base_name}{suffix}.lean"
-
         file_path.write_text(rec["code"] + "\n", encoding="utf-8")
         level_counts[level] += 1
         total += 1
-
     stats = store.stats()
     readme_lines = [
         "# LeanGPT proof library",
@@ -94,9 +67,9 @@ def export(results_path: str, out_dir: str, max_per_signature: int, max_per_stat
     ]
     for level, count in sorted(level_counts.items()):
         readme_lines.append(f"- {level}: {count}")
-
-    (out_root / "README.md").write_text("\n".join(readme_lines) + "\n", encoding="utf-8")
-
+    (out_root / "README.md").write_text(
+        "\n".join(readme_lines) + "\n", encoding="utf-8"
+    )
     print(f"Экспортировано {total} файлов в {out_root}")
     for level, count in sorted(level_counts.items()):
         print(f"  {level}: {count}")
@@ -109,5 +82,4 @@ if __name__ == "__main__":
     parser.add_argument("--max-per-signature", type=int, default=200)
     parser.add_argument("--max-per-statement", type=int, default=20)
     args = parser.parse_args()
-
     export(args.results, args.out, args.max_per_signature, args.max_per_statement)

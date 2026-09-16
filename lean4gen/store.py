@@ -1,11 +1,4 @@
-"""
-JSONL-хранилище результатов + дедупликация/балансировка успешных
-примеров, чтобы self-play датасет не схлопывался в повторение одних
-и тех же тривиальных доказательств (by decide / by rfl и т.п.).
-"""
-
 from __future__ import annotations
-
 import hashlib
 import json
 import re
@@ -26,8 +19,7 @@ class Record:
 
 
 def normalize_code(code: str) -> str:
-    """Убрать пробелы/переносы для сравнения "по сути одинаковых" доказательств."""
-    return re.sub(r"\s+", " ", code).strip()
+    return re.sub("\\s+", " ", code).strip()
 
 
 def code_hash(code: str) -> str:
@@ -35,28 +27,34 @@ def code_hash(code: str) -> str:
 
 
 def tactic_signature(code: str) -> str:
-    """Грубая сигнатура "какими тактиками решено" — для балансировки по типам
-    (чтобы не переполнить датасет однотипными rfl/decide-доказательствами)."""
-    tactics = re.findall(r"\b(rfl|decide|simp|ring|omega|induction|cases|exact|apply|linarith)\b", code)
+    tactics = re.findall(
+        "\\b(rfl|decide|simp|ring|omega|induction|cases|exact|apply|linarith)\\b", code
+    )
     return ",".join(sorted(set(tactics))) or "other"
 
 
 class JsonlStore:
+
     def __init__(self, path: str) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._seen_hashes: set[str] | None = None
 
-    def add(self, statement: str, code: str, ok: bool, has_sorry: bool, errors: list[str]) -> bool:
-        """Вернёт False, если запись — дубликат уже сохранённого успешного примера
-        (дубликаты неуспешных попыток всё равно пишем — они тоже полезный сигнал)."""
+    def add(
+        self, statement: str, code: str, ok: bool, has_sorry: bool, errors: list[str]
+    ) -> bool:
         if ok and self._is_duplicate(code):
             return False
-
-        rec = Record(statement=statement, code=code, ok=ok, has_sorry=has_sorry, errors=errors, timestamp=time.time())
+        rec = Record(
+            statement=statement,
+            code=code,
+            ok=ok,
+            has_sorry=has_sorry,
+            errors=errors,
+            timestamp=time.time(),
+        )
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(asdict(rec), ensure_ascii=False) + "\n")
-
         if ok:
             self._register_hash(code)
         return True
@@ -89,15 +87,12 @@ class JsonlStore:
                 if rec["ok"] and (not exclude_sorry or not rec["has_sorry"]):
                     yield rec
 
-    def iter_balanced(self, exclude_sorry: bool = True, max_per_signature: int = 200, max_per_statement: int = 20):
-        """Итератор по успешным примерам с двумя ограничениями:
-        - max_per_signature: не более N примеров на "сигнатуру тактик" в целом
-          (не даёт датасету зарасти тысячей одинаковых `by decide`).
-        - max_per_statement: не более N *разных* доказательств одной и той же
-          теоремы (разные пути к одному результату — полезный сигнал, но не
-          нужно 200 вариаций для одной тривиальной леммы).
-        Дубликаты по коду (ровно то же доказательство) отсекаются ещё на
-        этапе add(), сюда не попадают."""
+    def iter_balanced(
+        self,
+        exclude_sorry: bool = True,
+        max_per_signature: int = 200,
+        max_per_statement: int = 20,
+    ):
         sig_counts: Counter[str] = Counter()
         per_statement: Counter[str] = Counter()
         for rec in self.iter_successful(exclude_sorry=exclude_sorry):
@@ -114,7 +109,7 @@ class JsonlStore:
     def stats(self) -> dict:
         if not self.path.exists():
             return {}
-        total, ok, sorry = 0, 0, 0
+        total, ok, sorry = (0, 0, 0)
         sig_counts: Counter[str] = Counter()
         with self.path.open(encoding="utf-8") as f:
             for line in f:
@@ -125,5 +120,10 @@ class JsonlStore:
                     sig_counts[tactic_signature(rec["code"])] += 1
                 if rec["has_sorry"]:
                     sorry += 1
-        return {"total": total, "ok": ok, "success_rate": ok / total if total else 0.0,
-                "with_sorry": sorry, "by_tactic_signature": dict(sig_counts)}
+        return {
+            "total": total,
+            "ok": ok,
+            "success_rate": ok / total if total else 0.0,
+            "with_sorry": sorry,
+            "by_tactic_signature": dict(sig_counts),
+        }

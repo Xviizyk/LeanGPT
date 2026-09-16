@@ -15,11 +15,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install lightweight deps (без torch — CI должен быть быстрым)
+      - name: Install test deps
         run: pip install pytest pyyaml
 
-      - name: Syntax check всех модулей
+      - name: Compile check
         run: python -m py_compile lean4gen/*.py scripts/*.py
 
-      - name: Тесты, не требующие torch (store, curriculum, schedules)
+      - name: Run tests
         run: pytest tests/ -v

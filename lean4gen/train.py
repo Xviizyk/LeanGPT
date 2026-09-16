@@ -1,25 +1,13 @@
-"""
-Обучение LeanGPT с нуля (next-token prediction) на собранном
-и токенизированном корпусе.
-
-Запуск:
-    python -m lean4gen.train
-"""
-
 from __future__ import annotations
-
 from pathlib import Path
-
 import torch
 from tokenizers import ByteLevelBPETokenizer
 from torch.utils.data import DataLoader, Dataset
-
 from .model import LeanGPT, ModelConfig
 from .schedules import lr_schedule
 
 
 class LeanTextDataset(Dataset):
-    """Режет весь корпус на непересекающиеся окна длиной block_size."""
 
     def __init__(self, token_ids: list[int], block_size: int) -> None:
         self.data = token_ids
@@ -30,10 +18,10 @@ class LeanTextDataset(Dataset):
 
     def __getitem__(self, i: int):
         start = i * self.block_size
-        chunk = self.data[start: start + self.block_size + 1]
+        chunk = self.data[start : start + self.block_size + 1]
         x = torch.tensor(chunk[:-1], dtype=torch.long)
         y = torch.tensor(chunk[1:], dtype=torch.long)
-        return x, y
+        return (x, y)
 
 
 def load_corpus_ids(corpus_dir: str, tokenizer: ByteLevelBPETokenizer) -> list[int]:
@@ -52,56 +40,46 @@ def train(
     block_size: int = 512,
     batch_size: int = 16,
     epochs: int = 3,
-    base_lr: float = 3e-4,
+    base_lr: float = 0.0003,
     warmup_frac: float = 0.05,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> None:
     tokenizer = ByteLevelBPETokenizer(
         f"{tokenizer_dir}/vocab.json", f"{tokenizer_dir}/merges.txt"
     )
-
     print("Токенизация корпуса...")
     ids = load_corpus_ids(corpus_dir, tokenizer)
     print(f"Всего токенов в корпусе: {len(ids)}")
-
     dataset = LeanTextDataset(ids, block_size)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
     cfg = ModelConfig(vocab_size=tokenizer.get_vocab_size(), block_size=block_size)
     model = LeanGPT(cfg).to(device)
     if device == "cuda":
-        model = torch.compile(model)  # ускоряет обучение на современных GPU
+        model = torch.compile(model)
     optim = torch.optim.AdamW(model.parameters(), lr=base_lr)
-
     use_amp = device == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
-
     total_steps = max(1, len(loader) * epochs)
     warmup_steps = max(1, int(total_steps * warmup_frac))
-
     Path(out_dir).mkdir(parents=True, exist_ok=True)
-
     step = 0
     for epoch in range(epochs):
         for x, y in loader:
-            x, y = x.to(device), y.to(device)
-
+            x, y = (x.to(device), y.to(device))
             lr = lr_schedule(step, total_steps, base_lr, warmup_steps)
             for g in optim.param_groups:
                 g["lr"] = lr
-
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
+            with torch.autocast(
+                device_type="cuda", dtype=torch.bfloat16, enabled=use_amp
+            ):
                 _, loss, _ = model(x, y)
-
             optim.zero_grad()
             scaler.scale(loss).backward()
             scaler.step(optim)
             scaler.update()
-
             if step % 50 == 0:
                 print(f"epoch {epoch} step {step} lr {lr:.2e} loss {loss.item():.4f}")
             step += 1
-
         ckpt_path = Path(out_dir) / f"lean_gpt_epoch{epoch}.pt"
         torch.save({"model": model.state_dict(), "config": cfg}, ckpt_path)
         print(f"Сохранён чекпоинт: {ckpt_path}")

@@ -1,20 +1,13 @@
-"""
-Пул из N инстансов LeanRepl для параллельной верификации: без пула вся
-проверка кандидатов идёт последовательно через единственный процесс,
-что на этапе GRPO (N кандидатов на формулировку) — узкое место throughput.
-"""
-
 from __future__ import annotations
-
 import queue
 import threading
 from contextlib import contextmanager
 from typing import Optional
-
 from .repl import LeanRepl
 
 
 class ReplPool:
+
     def __init__(
         self,
         repl_bin: str,
@@ -33,7 +26,9 @@ class ReplPool:
 
     def start(self) -> None:
         for _ in range(self.pool_size):
-            repl = LeanRepl(self.repl_bin, self.project_dir, self.timeout_sec, self.env_file)
+            repl = LeanRepl(
+                self.repl_bin, self.project_dir, self.timeout_sec, self.env_file
+            )
             repl.start()
             self._all.append(repl)
             self._pool.put(repl)
@@ -52,7 +47,6 @@ class ReplPool:
 
     @contextmanager
     def checkout(self):
-        """Взять свободный REPL из пула, блокируясь если все заняты."""
         repl = self._pool.get()
         try:
             yield repl
@@ -60,8 +54,6 @@ class ReplPool:
             self._pool.put(repl)
 
     def verify_many(self, codes: list[str]) -> list:
-        """Проверить список кандидатов параллельно — по одному потоку на
-        свободный REPL из пула. Порядок результатов соответствует codes."""
         results: list = [None] * len(codes)
         lock = threading.Lock()
 
@@ -71,7 +63,9 @@ class ReplPool:
             with lock:
                 results[i] = result
 
-        threads = [threading.Thread(target=worker, args=(i, c)) for i, c in enumerate(codes)]
+        threads = [
+            threading.Thread(target=worker, args=(i, c)) for i, c in enumerate(codes)
+        ]
         for t in threads:
             t.start()
         for t in threads:

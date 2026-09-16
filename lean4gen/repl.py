@@ -1,21 +1,4 @@
-"""
-Обёртка над Lean REPL (leanprover-community/repl).
-
-Поддерживает два режима:
-1. verify(code) — проверка целого куска кода целиком (как раньше).
-2. Пошаговый режим по тактикам через proofState: open_goal() -> run_tactic()
-   -> получаем новое состояние (goals) после каждой тактики, а не только
-   в самом конце. Это даёт частичный сигнал ("эта тактика продвинула
-   доказательство") вместо бинарного "весь текст скомпилировался / нет".
-
-Установка REPL:
-    git clone https://github.com/leanprover-community/repl
-    cd repl && lake build
-    # бинарник: .lake/build/bin/repl
-"""
-
 from __future__ import annotations
-
 import json
 import selectors
 import subprocess
@@ -36,8 +19,8 @@ class VerifyResult:
 @dataclass
 class TacticState:
     proof_state_id: int
-    goals: list[str]           # человекочитаемые оставшиеся цели
-    done: bool                 # goals пуст -> доказательство завершено
+    goals: list[str]
+    done: bool
     error: Optional[str] = None
 
 
@@ -46,6 +29,7 @@ class LeanReplError(RuntimeError):
 
 
 class LeanRepl:
+
     def __init__(
         self,
         repl_bin: str,
@@ -95,38 +79,31 @@ class LeanRepl:
         self.start()
 
     def _send(self, payload: dict) -> dict:
-        """Отправить команду и дождаться ответа с таймаутом. Если REPL не
-        отвечает за timeout_sec (зависшая тактика, бесконечный simp и т.п.),
-        процесс убивается и пересоздаётся — иначе весь пайплайн встанет
-        навсегда на одной проблемной генерации."""
         assert self._proc is not None, "REPL не запущен, вызови start()"
         line = json.dumps(payload)
         with self._lock:
             self._proc.stdin.write(line + "\n\n")
             self._proc.stdin.flush()
-
             sel = selectors.DefaultSelector()
             sel.register(self._proc.stdout, selectors.EVENT_READ)
-
             out_lines: list[str] = []
             deadline = self.timeout_sec
             try:
                 while True:
                     events = sel.select(timeout=deadline)
                     if not events:
-                        raise LeanReplError(f"REPL не ответил за {self.timeout_sec}с (таймаут)")
+                        raise LeanReplError(
+                            f"REPL не ответил за {self.timeout_sec}с (таймаут)"
+                        )
                     out_line = self._proc.stdout.readline()
                     if out_line == "":
                         raise LeanReplError("REPL завершился неожиданно")
                     if out_line.strip() == "":
                         break
                     out_lines.append(out_line)
-                    # после первой строки ответа даём меньше времени на "хвост" —
-                    # не ждать полный timeout_sec на каждую последующую строку
                     deadline = min(deadline, 5.0)
             finally:
                 sel.close()
-
         raw = "".join(out_lines).strip()
         if not raw:
             raise LeanReplError("Пустой ответ от REPL")
@@ -139,8 +116,6 @@ class LeanRepl:
             raise LeanReplError(f"Не удалось создать окружение: {resp}")
         return env
 
-    # -- режим 1: весь код целиком ---------------------------------------
-
     def verify(self, code: str) -> VerifyResult:
         payload = {"cmd": code}
         if self._env_id is not None:
@@ -149,20 +124,22 @@ class LeanRepl:
             resp = self._send(payload)
         except LeanReplError:
             self.restart()
-            return VerifyResult(ok=False, has_sorry=False, errors=["repl_crashed"], warnings=[], raw={})
-
+            return VerifyResult(
+                ok=False, has_sorry=False, errors=["repl_crashed"], warnings=[], raw={}
+            )
         messages = resp.get("messages", [])
         errors = [m["data"] for m in messages if m.get("severity") == "error"]
         warnings = [m["data"] for m in messages if m.get("severity") == "warning"]
-        has_sorry = any("sorry" in w.lower() for w in warnings) or "sorry" in code
-
-        return VerifyResult(ok=(len(errors) == 0), has_sorry=has_sorry, errors=errors, warnings=warnings, raw=resp)
-
-    # -- режим 2: пошагово по тактикам ------------------------------------
+        has_sorry = any(("sorry" in w.lower() for w in warnings)) or "sorry" in code
+        return VerifyResult(
+            ok=len(errors) == 0,
+            has_sorry=has_sorry,
+            errors=errors,
+            warnings=warnings,
+            raw=resp,
+        )
 
     def open_goal(self, statement: str) -> TacticState:
-        """Открыть новую цель из формулировки теоремы (statement должен
-        заканчиваться на ':= by' — REPL вернёт исходный proofState с целями)."""
         code = statement if statement.rstrip().endswith("by") else f"{statement} := by"
         payload = {"cmd": code}
         if self._env_id is not None:
@@ -171,47 +148,53 @@ class LeanRepl:
             resp = self._send(payload)
         except LeanReplError:
             self.restart()
-            return TacticState(proof_state_id=-1, goals=[], done=False, error="repl_crashed")
-
-        errors = [m["data"] for m in resp.get("messages", []) if m.get("severity") == "error"]
+            return TacticState(
+                proof_state_id=-1, goals=[], done=False, error="repl_crashed"
+            )
+        errors = [
+            m["data"] for m in resp.get("messages", []) if m.get("severity") == "error"
+        ]
         if errors:
-            return TacticState(proof_state_id=-1, goals=[], done=False, error="; ".join(errors))
-
+            return TacticState(
+                proof_state_id=-1, goals=[], done=False, error="; ".join(errors)
+            )
         sorries = resp.get("sorries", [])
         if not sorries:
-            # либо доказательство пустое и сразу решено (rfl-подобная теорема), либо ошибка формата
             return TacticState(proof_state_id=resp.get("env", -1), goals=[], done=True)
-
         goal = sorries[0]
         return TacticState(
-            proof_state_id=goal["proofState"],
-            goals=[goal.get("goal", "")],
-            done=False,
+            proof_state_id=goal["proofState"], goals=[goal.get("goal", "")], done=False
         )
 
     def run_tactic(self, state: TacticState, tactic: str) -> TacticState:
-        """Применить одну тактику к текущему proofState, получить новое состояние."""
         if state.done or state.error:
             return state
-
         payload = {"tactic": tactic, "proofState": state.proof_state_id}
         try:
             resp = self._send(payload)
         except LeanReplError:
             self.restart()
-            return TacticState(proof_state_id=-1, goals=state.goals, done=False, error="repl_crashed")
-
-        if "error" in resp or resp.get("messages") and any(
-            m.get("severity") == "error" for m in resp.get("messages", [])
+            return TacticState(
+                proof_state_id=-1, goals=state.goals, done=False, error="repl_crashed"
+            )
+        if "error" in resp or (
+            resp.get("messages")
+            and any((m.get("severity") == "error" for m in resp.get("messages", [])))
         ):
             errs = resp.get("error") or [
-                m["data"] for m in resp.get("messages", []) if m.get("severity") == "error"
+                m["data"]
+                for m in resp.get("messages", [])
+                if m.get("severity") == "error"
             ]
-            return TacticState(proof_state_id=state.proof_state_id, goals=state.goals, done=False, error=str(errs))
-
+            return TacticState(
+                proof_state_id=state.proof_state_id,
+                goals=state.goals,
+                done=False,
+                error=str(errs),
+            )
         new_goals = resp.get("goals", [])
         return TacticState(
             proof_state_id=resp.get("proofState", state.proof_state_id),
             goals=new_goals,
-            done=(len(new_goals) == 0),
+            done=len(new_goals) == 0,
         )

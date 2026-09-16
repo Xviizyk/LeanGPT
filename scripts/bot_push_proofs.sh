@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
-# Бот для репозитория "Доказательства" — публичный, пуш без курирования.
-# Использование:
-#   export PROOFS_REPO=git@github.com:you/lean4gen-proofs.git
-#   ./scripts/bot_push_proofs.sh
-
 set -euo pipefail
 
 if [[ -z "${PROOFS_REPO:-}" ]]; then
-  echo "Укажи PROOFS_REPO"; exit 1
+  echo "Set PROOFS_REPO"; exit 1
 fi
 
 WORKDIR="proofs_dump_repo"
@@ -20,6 +15,6 @@ python3 scripts/bot_dump_proofs.py
 
 cd "$WORKDIR"
 git add .
-git commit -m "bot: dump $(date -u +%Y-%m-%dT%H:%M:%SZ)" || echo "нечего коммитить"
+git commit -m "bot: dump $(date -u +%Y-%m-%dT%H:%M:%SZ)" || true
 git branch -M main
 git push -u origin main

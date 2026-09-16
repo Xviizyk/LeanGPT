@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
-"""
-Быстрая проверка связки Python <-> Lean REPL без модели-генератора.
-Пути берутся из конфига (см. lean4gen/config.py), не хардкодятся.
-"""
-
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from lean4gen.config import load_config
 from lean4gen.repl import LeanRepl
 from lean4gen.store import JsonlStore
@@ -23,15 +17,24 @@ SNIPPETS = [
 def main() -> None:
     cfg = load_config()
     if not cfg.repl_bin or not cfg.lean_project_dir:
-        raise SystemExit("Укажи repl_bin / lean_project_dir в config.local.yaml или через REPL_BIN / LEAN_PROJECT_DIR")
-
+        raise SystemExit(
+            "Укажи repl_bin / lean_project_dir в config.local.yaml или через REPL_BIN / LEAN_PROJECT_DIR"
+        )
     store = JsonlStore("data/test_results.jsonl")
     with LeanRepl(repl_bin=cfg.repl_bin, project_dir=cfg.lean_project_dir) as repl:
         for code in SNIPPETS:
             result = repl.verify(code)
-            store.add(statement=code, code=code, ok=result.ok, has_sorry=result.has_sorry, errors=result.errors)
+            store.add(
+                statement=code,
+                code=code,
+                ok=result.ok,
+                has_sorry=result.has_sorry,
+                errors=result.errors,
+            )
             status = "OK" if result.ok else "FAIL"
-            print(f"[{status}] sorry={result.has_sorry} errors={result.errors}  <- {code}")
+            print(
+                f"[{status}] sorry={result.has_sorry} errors={result.errors}  <- {code}"
+            )
 
 
 if __name__ == "__main__":

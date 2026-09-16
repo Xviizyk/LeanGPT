@@ -1,15 +1,6 @@
-"""
-LeanGPT v2 — decoder-only трансформер с современными компонентами:
-RMSNorm, RoPE (относительные позиции, не ограничены block_size так жёстко),
-SwiGLU-FFN, scaled_dot_product_attention (Flash Attention внутри PyTorch),
-weight tying между эмбеддингом и выходной головой.
-"""
-
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Optional
-
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -18,7 +9,7 @@ from torch.nn import functional as F
 @dataclass
 class ModelConfig:
     vocab_size: int = 16000
-    block_size: int = 2048       # максимальная длина, использованная при обучении
+    block_size: int = 2048
     n_layer: int = 8
     n_head: int = 8
     n_embd: int = 512
@@ -27,7 +18,8 @@ class ModelConfig:
 
 
 class RMSNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-5) -> None:
+
+    def __init__(self, dim: int, eps: float = 1e-05) -> None:
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
@@ -37,12 +29,16 @@ class RMSNorm(nn.Module):
         return norm * self.weight
 
 
-def build_rope_cache(seq_len: int, head_dim: int, base: float, device, dtype) -> tuple[torch.Tensor, torch.Tensor]:
-    inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim))
+def build_rope_cache(
+    seq_len: int, head_dim: int, base: float, device, dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
+    inv_freq = 1.0 / base ** (
+        torch.arange(0, head_dim, 2, device=device).float() / head_dim
+    )
     t = torch.arange(seq_len, device=device).float()
     freqs = torch.outer(t, inv_freq)
     emb = torch.cat([freqs, freqs], dim=-1)
-    return emb.cos().to(dtype), emb.sin().to(dtype)
+    return (emb.cos().to(dtype), emb.sin().to(dtype))
 
 
 def rotate_half(x: torch.Tensor) -> torch.Tensor:
@@ -51,13 +47,13 @@ def rotate_half(x: torch.Tensor) -> torch.Tensor:
 
 
 def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    # x: (B, n_head, T, head_dim); cos/sin: (T, head_dim)
     cos = cos[None, None, :, :]
     sin = sin[None, None, :, :]
     return x * cos + rotate_half(x) * sin
 
 
 class CausalSelfAttention(nn.Module):
+
     def __init__(self, cfg: ModelConfig) -> None:
         super().__init__()
         assert cfg.n_embd % cfg.n_head == 0
@@ -74,50 +70,41 @@ class CausalSelfAttention(nn.Module):
         kv_cache: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
         position_offset: int = 0,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        """
-        kv_cache: (k, v) от предыдущих шагов, каждый (B, n_head, T_past, head_dim).
-        position_offset: T_past — нужно для правильного RoPE-угла у новых токенов
-        (иначе позиции всегда считались бы с нуля при инкрементальной генерации).
-
-        Возвращает (output, new_kv_cache) — new_kv_cache уже включает текущий шаг,
-        передавай его в следующий вызов.
-        """
         B, T, C = x.shape
         qkv = self.qkv(x)
         q, k, v = qkv.split(C, dim=2)
         q = q.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
         k = k.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
         v = v.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
-
-        cos, sin = build_rope_cache(position_offset + T, self.head_dim, self.rope_base, x.device, x.dtype)
-        cos, sin = cos[position_offset:], sin[position_offset:]
+        cos, sin = build_rope_cache(
+            position_offset + T, self.head_dim, self.rope_base, x.device, x.dtype
+        )
+        cos, sin = (cos[position_offset:], sin[position_offset:])
         q = apply_rope(q, cos, sin)
         k = apply_rope(k, cos, sin)
-
         if kv_cache is not None:
             past_k, past_v = kv_cache
             k = torch.cat([past_k, k], dim=2)
             v = torch.cat([past_v, v], dim=2)
         new_cache = (k, v)
-
-        # is_causal=True валиден только когда T == T_kv (нет кэша); с кэшем
-        # новый токен видит весь префикс, маска не нужна вовсе (он последний).
         is_causal = kv_cache is None
         out = F.scaled_dot_product_attention(
-            q, k, v, is_causal=is_causal, dropout_p=self.dropout if self.training else 0.0
+            q,
+            k,
+            v,
+            is_causal=is_causal,
+            dropout_p=self.dropout if self.training else 0.0,
         )
         out = out.transpose(1, 2).contiguous().view(B, T, C)
-        return self.proj(out), new_cache
+        return (self.proj(out), new_cache)
 
 
 class SwiGLU(nn.Module):
-    """SwiGLU FFN: обычно ~2/3 * 4*n_embd на скрытый размер, чтобы параметры
-    были сопоставимы с обычным GELU-FFN при том же n_embd."""
 
     def __init__(self, cfg: ModelConfig) -> None:
         super().__init__()
         hidden = int(4 * cfg.n_embd * 2 / 3)
-        hidden = ((hidden + 63) // 64) * 64  # выравнивание для эффективности
+        hidden = (hidden + 63) // 64 * 64
         self.w1 = nn.Linear(cfg.n_embd, hidden, bias=False)
         self.w2 = nn.Linear(cfg.n_embd, hidden, bias=False)
         self.w3 = nn.Linear(hidden, cfg.n_embd, bias=False)
@@ -128,6 +115,7 @@ class SwiGLU(nn.Module):
 
 
 class Block(nn.Module):
+
     def __init__(self, cfg: ModelConfig) -> None:
         super().__init__()
         self.ln1 = RMSNorm(cfg.n_embd)
@@ -144,10 +132,11 @@ class Block(nn.Module):
         attn_out, new_cache = self.attn(self.ln1(x), kv_cache, position_offset)
         x = x + attn_out
         x = x + self.mlp(self.ln2(x))
-        return x, new_cache
+        return (x, new_cache)
 
 
 class LeanGPT(nn.Module):
+
     def __init__(self, cfg: ModelConfig) -> None:
         super().__init__()
         self.cfg = cfg
@@ -156,8 +145,7 @@ class LeanGPT(nn.Module):
         self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)])
         self.ln_f = RMSNorm(cfg.n_embd)
         self.head = nn.Linear(cfg.n_embd, cfg.vocab_size, bias=False)
-        self.head.weight = self.tok_emb.weight  # weight tying
-
+        self.head.weight = self.tok_emb.weight
         self.apply(self._init_weights)
 
     @staticmethod
@@ -175,8 +163,9 @@ class LeanGPT(nn.Module):
         position_offset: int = 0,
     ):
         B, T = idx.shape
-        assert T <= self.cfg.block_size, "последовательность длиннее block_size, увеличь cfg.block_size и переобучи"
-
+        assert (
+            T <= self.cfg.block_size
+        ), "последовательность длиннее block_size, увеличь cfg.block_size и переобучи"
         x = self.drop(self.tok_emb(idx))
         new_caches = []
         for i, block in enumerate(self.blocks):
@@ -185,21 +174,23 @@ class LeanGPT(nn.Module):
             new_caches.append(new_cache_i)
         x = self.ln_f(x)
         logits = self.head(x)
-
         loss = None
         if targets is not None:
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-        return logits, loss, new_caches
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1
+            )
+        return (logits, loss, new_caches)
 
     @torch.no_grad()
-    def generate(self, idx: torch.Tensor, max_new_tokens: int, temperature: float = 0.8, top_p: float = 0.95):
-        """Инкрементальная генерация с KV-кэшем: первый шаг считает весь
-        промпт целиком, каждый следующий — только новый токен (O(1) по
-        длине контекста вместо пересчёта всей последовательности заново)."""
-        # первый проход — весь промпт, строим кэш
+    def generate(
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 0.8,
+        top_p: float = 0.95,
+    ):
         logits, _, kv_caches = self(idx)
         position_offset = idx.shape[1]
-
         for _ in range(max_new_tokens):
             next_logits = logits[:, -1, :] / temperature
             probs = F.softmax(next_logits, dim=-1)
@@ -210,20 +201,19 @@ class LeanGPT(nn.Module):
             cutoff[..., 0] = False
             sorted_probs[cutoff] = 0.0
             sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True)
-
             next_sorted = torch.multinomial(sorted_probs, num_samples=1)
             next_token = sorted_idx.gather(-1, next_sorted)
             idx = torch.cat([idx, next_token], dim=1)
-
-            # следующий шаг: подаём только новый токен + кэш с прошлого шага
-            logits, _, kv_caches = self(next_token, kv_caches=kv_caches, position_offset=position_offset)
+            logits, _, kv_caches = self(
+                next_token, kv_caches=kv_caches, position_offset=position_offset
+            )
             position_offset += 1
-
         return idx
 
     @torch.no_grad()
-    def logprob_of_continuation(self, prompt_ids: torch.Tensor, cont_ids: torch.Tensor) -> torch.Tensor:
-        """Сумма log-вероятностей continuation при данном prompt — нужно для RL (REINFORCE/GRPO)."""
+    def logprob_of_continuation(
+        self, prompt_ids: torch.Tensor, cont_ids: torch.Tensor
+    ) -> torch.Tensor:
         full = torch.cat([prompt_ids, cont_ids], dim=1)
         logits, _, _ = self(full[:, :-1])
         logp = F.log_softmax(logits, dim=-1)

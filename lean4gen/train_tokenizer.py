@@ -1,15 +1,5 @@
-"""
-Обучение BPE-токенизатора на корпусе .lean файлов.
-
-Использует библиотеку `tokenizers` (быстрая, от HuggingFace, но не тянет
-за собой веса LLM — это просто токенизация, не противоречит идее
-"не использовать готовую LLM").
-"""
-
 from __future__ import annotations
-
 from pathlib import Path
-
 from tokenizers import ByteLevelBPETokenizer
 
 
@@ -20,28 +10,58 @@ def train_tokenizer(
 ) -> None:
     files = [str(p) for p in Path(corpus_dir).rglob("*.lean")]
     if not files:
-        raise SystemExit(f"В {corpus_dir} не найдено .lean файлов — сначала запусти collect_corpus.py")
-
+        raise SystemExit(
+            f"В {corpus_dir} не найдено .lean файлов — сначала запусти collect_corpus.py"
+        )
     print(f"Файлов для обучения токенизатора: {len(files)}")
-
-    # Спецтокены под частые тактики/символы Lean4 — гарантируем, что они
-    # попадут в словарь целиком, а не будут раздроблены byte-level BPE
-    # на бессмысленные куски (особенно юникод-символы вроде ∀ ∃ ≠ →).
     tactic_tokens = [
-        "rfl", "decide", "simp", "ring", "omega", "linarith", "induction",
-        "cases", "exact", "apply", "intro", "constructor", "sorry", "by",
-        "theorem", "lemma", "def", "instance", "have", "show", "from",
+        "rfl",
+        "decide",
+        "simp",
+        "ring",
+        "omega",
+        "linarith",
+        "induction",
+        "cases",
+        "exact",
+        "apply",
+        "intro",
+        "constructor",
+        "sorry",
+        "by",
+        "theorem",
+        "lemma",
+        "def",
+        "instance",
+        "have",
+        "show",
+        "from",
     ]
-    symbol_tokens = ["∀", "∃", "≠", "→", "↔", "∧", "∨", "¬", "∈", "⊆", "≤", "≥", "•", "∘"]
-
+    symbol_tokens = [
+        "∀",
+        "∃",
+        "≠",
+        "→",
+        "↔",
+        "∧",
+        "∨",
+        "¬",
+        "∈",
+        "⊆",
+        "≤",
+        "≥",
+        "•",
+        "∘",
+    ]
     tokenizer = ByteLevelBPETokenizer()
     tokenizer.train(
         files=files,
         vocab_size=vocab_size,
         min_frequency=2,
-        special_tokens=["<pad>", "<bos>", "<eos>", "<unk>"] + tactic_tokens + symbol_tokens,
+        special_tokens=["<pad>", "<bos>", "<eos>", "<unk>"]
+        + tactic_tokens
+        + symbol_tokens,
     )
-
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     tokenizer.save_model(str(out_path))
