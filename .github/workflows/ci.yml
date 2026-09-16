@@ -19,7 +19,7 @@ jobs:
         run: pip install pytest pyyaml
 
       - name: Compile check
-        run: python -m py_compile lean4gen/*.py scripts/*.py
+        run: python -m py_compile leangpt/*.py scripts/*.py
 
       - name: Run tests
         run: pytest tests/ -v

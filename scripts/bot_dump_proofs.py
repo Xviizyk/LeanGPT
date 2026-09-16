@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lean4gen.config import load_config
+from leangpt.config import load_config
 
 STATE_FILE = ".bot_state"
 

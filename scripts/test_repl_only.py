@@ -3,9 +3,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lean4gen.config import load_config
-from lean4gen.repl import LeanRepl
-from lean4gen.store import JsonlStore
+from leangpt.config import load_config
+from leangpt.repl import LeanRepl
+from leangpt.store import JsonlStore
 
 SNIPPETS = [
     "theorem ok_proof : 1 + 1 = 2 := by decide",

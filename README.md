@@ -4,9 +4,9 @@ A neural net that writes Lean4 proofs, checks them against the real Lean compile
 
 Three repos make up the whole thing:
 
-- **lean4gen** (this one) — the code. Public, hand-edited only.
-- **lean4gen-proofs** — a raw, unfiltered dump of everything the bot has proven. Public, bot-pushed, messy on purpose.
-- **lean4gen-client** — your personal paths, tokens, corpus, and checkpoints. Private, never leaves your machine unless you want it to.
+- **LeanGPT** (this one, [github.com/Xviizyk/LeanGPT](https://github.com/Xviizyk/LeanGPT)) — the code. Public, hand-edited only.
+- **LeanGPT-proofs** ([github.com/Xviizyk/LeanGPT-proofs](https://github.com/Xviizyk/LeanGPT-proofs)) — a raw, unfiltered dump of everything the bot has proven. Public, bot-pushed, messy on purpose.
+- **LeanGPT-client** — your personal paths, tokens, corpus, and checkpoints. Private, never leaves your machine unless you want it to.
 
 ## Quick start
 
@@ -32,18 +32,18 @@ git clone https://github.com/leanprover-community/repl
 cd repl && lake build
 ```
 
-Point the project at your machine-specific paths and secrets with a `config.local.yaml` (see `lean4gen-client/config.local.yaml.example`), or export the equivalent environment variables:
+Point the project at your machine-specific paths and secrets with a `config.local.yaml` (see `LeanGPT-client/config.local.yaml.example`), or export the equivalent environment variables:
 
 ```bash
-export LEAN4GEN_CONFIG=/path/to/config.local.yaml
+export LEANGPT_CONFIG=/path/to/config.local.yaml
 ```
 
 Then:
 
 ```bash
 python scripts/collect_corpus.py
-python -m lean4gen.train_tokenizer
-python -m lean4gen.train
+python -m leangpt.train_tokenizer
+python -m leangpt.train
 python scripts/run_pipeline.py
 ```
 
@@ -62,12 +62,12 @@ The last command runs the actual self-play loop — a curriculum of increasingly
 ## Publishing
 
 ```bash
-export SOURCES_REPO=git@github.com:you/lean4gen.git
+export SOURCES_REPO=https://github.com/Xviizyk/LeanGPT.git
 ./scripts/publish.sh
 ```
 
 ```bash
-export PROOFS_REPO=git@github.com:you/lean4gen-proofs.git
+export PROOFS_REPO=https://github.com/Xviizyk/LeanGPT-proofs.git
 ./scripts/bot_push_proofs.sh
 ```
 
@@ -80,7 +80,7 @@ python scripts/export_proofs.py --out proof_library
 ## Repo layout
 
 ```
-lean4gen/
+leangpt/
   model.py, config.py, dashboard.py, repl.py, repl_pool.py,
   search.py, curriculum.py, eval.py, generator.py, schedules.py,
   train.py, train_tokenizer.py, rl_train.py, pipeline.py, store.py

@@ -1,6 +1,6 @@
 import json
 import pytest
-from lean4gen.store import JsonlStore, code_hash, normalize_code, tactic_signature
+from leangpt.store import JsonlStore, code_hash, normalize_code, tactic_signature
 
 
 def test_normalize_code_collapses_whitespace():

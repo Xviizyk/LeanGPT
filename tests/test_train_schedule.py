@@ -1,4 +1,4 @@
-from lean4gen.schedules import lr_schedule
+from leangpt.schedules import lr_schedule
 
 
 def test_warmup_increases_lr():

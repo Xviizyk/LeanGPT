@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lean4gen.store import JsonlStore, tactic_signature
+from leangpt.store import JsonlStore, tactic_signature
 
 
 def guess_level(statement: str) -> str:
@@ -57,7 +57,7 @@ def export(
     readme_lines = [
         "# LeanGPT proof library",
         "",
-        "Автоматически сгенерировано и доказано LeanGPT (см. основной репозиторий lean4gen).",
+        "Автоматически сгенерировано и доказано LeanGPT (см. основной репозиторий LeanGPT).",
         "",
         f"- Всего экспортировано доказательств: {total}",
         f"- Общий success_rate по истории генераций: {stats.get('success_rate', 0):.3f}",

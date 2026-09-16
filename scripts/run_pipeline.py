@@ -5,15 +5,15 @@ import torch
 from tokenizers import ByteLevelBPETokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lean4gen.config import load_config
-from lean4gen.curriculum import curriculum_batch, eval_batch, should_advance
-from lean4gen.dashboard import Dashboard
-from lean4gen.eval import evaluate
-from lean4gen.generator import GenConfig, LeanGenerator
-from lean4gen.model import LeanGPT
-from lean4gen.repl_pool import ReplPool
-from lean4gen.rl_train import RLConfig, grpo_step
-from lean4gen.store import JsonlStore
+from leangpt.config import load_config
+from leangpt.curriculum import curriculum_batch, eval_batch, should_advance
+from leangpt.dashboard import Dashboard
+from leangpt.eval import evaluate
+from leangpt.generator import GenConfig, LeanGenerator
+from leangpt.model import LeanGPT
+from leangpt.repl_pool import ReplPool
+from leangpt.rl_train import RLConfig, grpo_step
+from leangpt.store import JsonlStore
 
 N_ROUNDS_PER_LEVEL = 5
 MAX_LEVEL = 4
@@ -25,7 +25,7 @@ def main() -> None:
     cfg = load_config()
     if not cfg.repl_bin or not cfg.lean_project_dir:
         raise SystemExit(
-            "Не заданы repl_bin / lean_project_dir. Укажи их в config.local.yaml (см. lean4gen-client/config.local.yaml.example) или переменными окружения REPL_BIN / LEAN_PROJECT_DIR."
+            "Не заданы repl_bin / lean_project_dir. Укажи их в config.local.yaml (см. LeanGPT-client/config.local.yaml.example) или переменными окружения REPL_BIN / LEAN_PROJECT_DIR."
         )
     gen = LeanGenerator(
         GenConfig(

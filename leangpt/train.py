@@ -80,7 +80,7 @@ def train(
             if step % 50 == 0:
                 print(f"epoch {epoch} step {step} lr {lr:.2e} loss {loss.item():.4f}")
             step += 1
-        ckpt_path = Path(out_dir) / f"lean_gpt_epoch{epoch}.pt"
+        ckpt_path = Path(out_dir) / f"leangpt_epoch{epoch}.pt"
         torch.save({"model": model.state_dict(), "config": cfg}, ckpt_path)
         print(f"Сохранён чекпоинт: {ckpt_path}")
 

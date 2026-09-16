@@ -8,7 +8,7 @@ from .model import LeanGPT, ModelConfig
 
 @dataclass
 class GenConfig:
-    checkpoint_path: str = "data/checkpoints/lean_gpt_epoch2.pt"
+    checkpoint_path: str = "data/checkpoints/leangpt_epoch2.pt"
     tokenizer_dir: str = "data/tokenizer"
     max_new_tokens: int = 256
     temperature: float = 0.9

@@ -10,7 +10,7 @@ if [[ ! -d .git ]]; then
   git remote add origin "$SOURCES_REPO"
 fi
 
-git add lean4gen/ scripts/ tests/ .github/ requirements.txt requirements-dev.txt README.md LICENSE .gitignore
+git add leangpt/ scripts/ tests/ .github/ requirements.txt requirements-dev.txt README.md LICENSE .gitignore
 git commit -m "update sources ($(date -u +%Y-%m-%dT%H:%M:%SZ))" || true
 git branch -M main
 git push -u origin main

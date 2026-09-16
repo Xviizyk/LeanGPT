@@ -105,14 +105,14 @@ goto menu
 :train_tokenizer
 call :check_python
 if errorlevel 1 goto menu
-python -m lean4gen.train_tokenizer
+python -m leangpt.train_tokenizer
 echo ✅
 goto menu
 
 :pretrain
 call :check_python
 if errorlevel 1 goto menu
-python -m lean4gen.train
+python -m leangpt.train
 echo ✅
 goto menu
 

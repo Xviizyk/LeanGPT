@@ -15,7 +15,7 @@ class Config:
     repl_bin: str = ""
     lean_project_dir: str = ""
     env_import: Optional[str] = None
-    checkpoint_path: str = "data/checkpoints/lean_gpt_latest.pt"
+    checkpoint_path: str = "data/checkpoints/leangpt_latest.pt"
     tokenizer_dir: str = "data/tokenizer"
     results_jsonl: str = "data/results.jsonl"
     github_token: Optional[str] = None
@@ -24,7 +24,7 @@ class Config:
 
 
 def load_config() -> Config:
-    path = os.environ.get("LEAN4GEN_CONFIG")
+    path = os.environ.get("LEANGPT_CONFIG")
     if not path and Path("config.local.yaml").exists():
         path = "config.local.yaml"
     data: dict = {}

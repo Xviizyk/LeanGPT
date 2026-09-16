@@ -1,4 +1,4 @@
-from lean4gen.curriculum import (
+from leangpt.curriculum import (
     curriculum_batch,
     eval_batch,
     level_0,

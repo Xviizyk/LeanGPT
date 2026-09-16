@@ -105,8 +105,8 @@ CFG
 }
 
 collect_corpus() { check_python; python3 scripts/collect_corpus.py; t done; }
-train_tokenizer() { check_python; python3 -m lean4gen.train_tokenizer; t done; }
-pretrain() { check_python; python3 -m lean4gen.train; t done; }
+train_tokenizer() { check_python; python3 -m leangpt.train_tokenizer; t done; }
+pretrain() { check_python; python3 -m leangpt.train; t done; }
 run_selfplay() { check_python; python3 scripts/run_pipeline.py; t done; }
 export_proofs() { check_python; python3 scripts/export_proofs.py; t done; }
 publish_sources() { bash scripts/publish.sh; t done; }
