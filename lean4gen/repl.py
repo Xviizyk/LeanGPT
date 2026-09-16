@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import selectors
 import subprocess
 import threading
 from dataclasses import dataclass, field
@@ -94,19 +95,38 @@ class LeanRepl:
         self.start()
 
     def _send(self, payload: dict) -> dict:
+        """Отправить команду и дождаться ответа с таймаутом. Если REPL не
+        отвечает за timeout_sec (зависшая тактика, бесконечный simp и т.п.),
+        процесс убивается и пересоздаётся — иначе весь пайплайн встанет
+        навсегда на одной проблемной генерации."""
         assert self._proc is not None, "REPL не запущен, вызови start()"
         line = json.dumps(payload)
         with self._lock:
             self._proc.stdin.write(line + "\n\n")
             self._proc.stdin.flush()
-            out_lines = []
-            while True:
-                out_line = self._proc.stdout.readline()
-                if out_line == "":
-                    raise LeanReplError("REPL завершился неожиданно")
-                if out_line.strip() == "":
-                    break
-                out_lines.append(out_line)
+
+            sel = selectors.DefaultSelector()
+            sel.register(self._proc.stdout, selectors.EVENT_READ)
+
+            out_lines: list[str] = []
+            deadline = self.timeout_sec
+            try:
+                while True:
+                    events = sel.select(timeout=deadline)
+                    if not events:
+                        raise LeanReplError(f"REPL не ответил за {self.timeout_sec}с (таймаут)")
+                    out_line = self._proc.stdout.readline()
+                    if out_line == "":
+                        raise LeanReplError("REPL завершился неожиданно")
+                    if out_line.strip() == "":
+                        break
+                    out_lines.append(out_line)
+                    # после первой строки ответа даём меньше времени на "хвост" —
+                    # не ждать полный timeout_sec на каждую последующую строку
+                    deadline = min(deadline, 5.0)
+            finally:
+                sel.close()
+
         raw = "".join(out_lines).strip()
         if not raw:
             raise LeanReplError("Пустой ответ от REPL")

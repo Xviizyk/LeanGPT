@@ -3,12 +3,11 @@
 и токенизированном корпусе.
 
 Запуск:
-    python lean4gen/train.py
+    python -m lean4gen.train
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import torch
@@ -16,6 +15,7 @@ from tokenizers import ByteLevelBPETokenizer
 from torch.utils.data import DataLoader, Dataset
 
 from .model import LeanGPT, ModelConfig
+from .schedules import lr_schedule
 
 
 class LeanTextDataset(Dataset):
@@ -52,7 +52,8 @@ def train(
     block_size: int = 512,
     batch_size: int = 16,
     epochs: int = 3,
-    lr: float = 3e-4,
+    base_lr: float = 3e-4,
+    warmup_frac: float = 0.05,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> None:
     tokenizer = ByteLevelBPETokenizer(
@@ -70,10 +71,13 @@ def train(
     model = LeanGPT(cfg).to(device)
     if device == "cuda":
         model = torch.compile(model)  # ускоряет обучение на современных GPU
-    optim = torch.optim.AdamW(model.parameters(), lr=lr)
+    optim = torch.optim.AdamW(model.parameters(), lr=base_lr)
 
     use_amp = device == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+
+    total_steps = max(1, len(loader) * epochs)
+    warmup_steps = max(1, int(total_steps * warmup_frac))
 
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
@@ -82,8 +86,12 @@ def train(
         for x, y in loader:
             x, y = x.to(device), y.to(device)
 
+            lr = lr_schedule(step, total_steps, base_lr, warmup_steps)
+            for g in optim.param_groups:
+                g["lr"] = lr
+
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
-                _, loss = model(x, y)
+                _, loss, _ = model(x, y)
 
             optim.zero_grad()
             scaler.scale(loss).backward()
@@ -91,7 +99,7 @@ def train(
             scaler.update()
 
             if step % 50 == 0:
-                print(f"epoch {epoch} step {step} loss {loss.item():.4f}")
+                print(f"epoch {epoch} step {step} lr {lr:.2e} loss {loss.item():.4f}")
             step += 1
 
         ckpt_path = Path(out_dir) / f"lean_gpt_epoch{epoch}.pt"

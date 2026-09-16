@@ -32,7 +32,12 @@ def read_offset(state_path: Path) -> int:
 
 
 def write_offset(state_path: Path, offset: int) -> None:
-    state_path.write_text(str(offset))
+    """Атомарная запись через tmp-файл + rename — иначе при параллельном
+    запуске бота во время работы run_pipeline.py возможна гонка (частично
+    записанный .bot_state при падении/совпадении по времени)."""
+    tmp_path = state_path.with_suffix(state_path.suffix + ".tmp")
+    tmp_path.write_text(str(offset))
+    tmp_path.replace(state_path)
 
 
 def dump_new(results_path: str, out_dir: str) -> int:
@@ -45,7 +50,15 @@ def dump_new(results_path: str, out_dir: str) -> int:
     if not results.exists():
         return 0
 
-    lines = results.read_text(encoding="utf-8").splitlines()
+    raw = results.read_text(encoding="utf-8")
+    # если файл не заканчивается переводом строки — последняя строка может
+    # быть записана не до конца (гонка с одновременно пишущим run_pipeline.py);
+    # безопаснее отбросить её и обработать в следующий прогон бота.
+    ends_complete = raw.endswith("\n")
+    lines = raw.splitlines()
+    if not ends_complete and lines:
+        lines = lines[:-1]
+
     new_lines = lines[offset:]
 
     count = 0

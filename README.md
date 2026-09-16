@@ -138,29 +138,55 @@ export SOURCES_REPO=git@github.com:you/lean4gen.git
 
 ```
 lean4gen/
-  model.py           — LeanGPT: RoPE + RMSNorm + SwiGLU + SDPA
+  model.py           — LeanGPT: RoPE + RMSNorm + SwiGLU + SDPA + KV-кэш
   config.py          — загрузка личных путей/секретов извне репозитория
   dashboard.py        — live TUI-панель (rich): токены/сек, success rate
-  repl.py            — Lean REPL: verify() целиком + open_goal/run_tactic пошагово
+  repl.py            — Lean REPL: verify() целиком + open_goal/run_tactic пошагово, с таймаутом
+  repl_pool.py        — пул REPL-процессов для параллельной верификации
   search.py          — best-first beam search по тактикам
-  curriculum.py       — синтетические леммы нарастающей сложности
+  curriculum.py       — синтетические леммы + held-out eval_batch()
+  eval.py            — оценка на held-out наборе, отдельно от train-статистики
   generator.py       — инференс модели, замер токенов/сек
+  schedules.py        — LR-расписание (warmup + cosine decay), без тяжёлых зависимостей
   train.py           — self-supervised претрейн (LM-лосс)
   train_tokenizer.py — BPE-токенизатор + спецтокены
-  rl_train.py        — GRPO-lite: RL по награде от REPL
+  rl_train.py        — GRPO-lite: RL по награде от REPL, штраф за длину
   pipeline.py         — простой цикл generate->verify->save (без RL)
-  store.py           — JSONL + дедуп + балансировка
+  store.py           — JSONL + дедуп + балансировка (по тактикам и по теореме)
 scripts/
   collect_corpus.py    — сбор .lean кода с GitHub
-  run_pipeline.py       — curriculum + GRPO + live-дашборд
+  run_pipeline.py       — curriculum + GRPO + held-out eval + live-дашборд
   export_proofs.py     — курированный снапшот доказательств (не для бота)
-  bot_dump_proofs.py   — сырой инкрементальный дамп новых доказательств
+  bot_dump_proofs.py   — сырой инкрементальный дамп новых доказательств (атомарная запись)
   bot_push_proofs.sh   — коммит+пуш дампа в репозиторий "Доказательства"
   publish.sh            — пуш кода в репозиторий "Исходники"
   test_repl_only.py    — тест связки с REPL без модели
+tests/                 — pytest: store, curriculum, LR-расписание
+.github/workflows/ci.yml — синтаксис-проверка + быстрые тесты при пуше
 ```
 
-## Открытые вопросы
+## Улучшения (последний раунд)
+
+- **Таймаут в REPL** (`repl.py`) — через `selectors`, зависшая тактика
+  (бесконечный `simp` и т.п.) больше не вешает весь пайплайн навсегда.
+- **KV-кэш при генерации** (`model.py`) — инкрементальная генерация вместо
+  пересчёта всей последовательности на каждом шаге (было O(n²), стало O(n)).
+- **Пул REPL-процессов** (`repl_pool.py`) — параллельная верификация группы
+  кандидатов в GRPO вместо последовательной через один процесс.
+- **Held-out eval** (`curriculum.eval_batch`, `eval.py`) — переход
+  curriculum на следующий уровень теперь решается по success rate на
+  непересекающемся с train eval-наборе, а не по общей истории (которая
+  раньше могла расти просто за счёт переобучения на конкретных константах).
+- **LR-расписание** (`schedules.py`) — linear warmup + cosine decay.
+- **Атомарная запись в bot_dump_proofs.py** — tmp-файл + rename, плюс
+  защита от чтения недописанной последней строки `results.jsonl`.
+- **Штраф за длину доказательства** в `reward_fn` (`rl_train.py`) — стимул
+  к более коротким/чистым доказательствам, а не только рабочим.
+- **Тесты + CI** (`tests/`, `.github/workflows/ci.yml`) — покрыты
+  `store.py` (дедуп/балансировка), `curriculum.py` (детерминизм eval-набора),
+  `schedules.py` (LR). CI лёгкий — без установки `torch`, только
+  синтаксис-проверка + быстрые тесты.
+- **LICENSE** — MIT, добавлен в "Исходники" и "Доказательства".
 
 - `open_goal`/`run_tactic` в `repl.py` — сверить имена полей ответа с
   актуальной версией Lean REPL (протокол иногда меняется).

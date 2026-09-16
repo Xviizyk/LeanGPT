@@ -22,7 +22,6 @@ from tokenizers import ByteLevelBPETokenizer
 
 from .generator import GenConfig, LeanGenerator, build_prompt
 from .model import LeanGPT, ModelConfig
-from .repl import LeanRepl
 from .store import JsonlStore
 
 
@@ -32,21 +31,31 @@ class RLConfig:
     lr: float = 1e-5
     kl_coef: float = 0.02     # штраф за отклонение от референс-модели (анти-collapse)
     clip_grad: float = 1.0
+    length_penalty: float = 0.01  # штраф за число тактик — стимул к более коротким доказательствам
 
 
-def reward_fn(ok: bool, has_sorry: bool) -> float:
+def reward_fn(ok: bool, has_sorry: bool, n_tactics: int = 0, length_penalty: float = 0.0) -> float:
     if ok and not has_sorry:
-        return 1.0
-    if ok and has_sorry:
-        return 0.2  # формально скомпилировалось, но это не настоящее доказательство
-    return 0.0
+        base = 1.0
+    elif ok and has_sorry:
+        base = 0.2  # формально скомпилировалось, но это не настоящее доказательство
+    else:
+        return 0.0
+    return max(0.0, base - length_penalty * n_tactics)
+
+
+def count_tactics(code: str) -> int:
+    """Грубая оценка числа тактических шагов — по количеству переносов
+    строк/точек с запятой внутри `by`-блока. Достаточно для относительного
+    сравнения длины доказательств внутри одной группы кандидатов."""
+    return max(1, code.count("\n") + code.count(";") + 1)
 
 
 def grpo_step(
     statement: str,
     generator: LeanGenerator,
     ref_model: LeanGPT,
-    repl: LeanRepl,
+    repl,
     optim: torch.optim.Optimizer,
     store: JsonlStore,
     cfg: RLConfig,
@@ -56,12 +65,19 @@ def grpo_step(
     (удобно логировать как метрику прогресса curriculum)."""
     prompt = build_prompt(statement)
     candidates = generator.generate(prompt)[: cfg.group_size]
+    full_codes = [f"{statement} := {cand}" if ":=" not in statement else cand for cand in candidates]
+
+    # если передан ReplPool — проверяем кандидатов параллельно (verify_many),
+    # иначе последовательно через единственный LeanRepl (обратная совместимость)
+    if hasattr(repl, "verify_many"):
+        verify_results = repl.verify_many(full_codes)
+    else:
+        verify_results = [repl.verify(code) for code in full_codes]
 
     rewards = []
-    for cand in candidates:
-        full_code = f"{statement} := {cand}" if ":=" not in statement else cand
-        result = repl.verify(full_code)
-        r = reward_fn(result.ok, result.has_sorry)
+    for cand, full_code, result in zip(candidates, full_codes, verify_results):
+        n_tactics = count_tactics(full_code)
+        r = reward_fn(result.ok, result.has_sorry, n_tactics, cfg.length_penalty)
         rewards.append(r)
         store.add(statement=statement, code=full_code, ok=result.ok, has_sorry=result.has_sorry, errors=result.errors)
 
@@ -101,7 +117,7 @@ def grpo_step(
 def run_grpo(
     statements: list[str],
     generator: LeanGenerator,
-    repl: LeanRepl,
+    repl,
     store: JsonlStore,
     tokenizer_dir: str = "data/tokenizer",
     cfg: RLConfig = RLConfig(),
