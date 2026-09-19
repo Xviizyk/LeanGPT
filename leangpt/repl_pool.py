@@ -1,9 +1,20 @@
 from __future__ import annotations
+
 import queue
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Optional
+
 from .repl import LeanRepl
+
+
+@dataclass
+class FailedResult:
+    
+    ok: bool = False
+    has_sorry: bool = False
+    errors: list = field(default_factory=list)
 
 
 class ReplPool:
@@ -59,7 +70,15 @@ class ReplPool:
 
         def worker(i: int, code: str) -> None:
             with self.checkout() as repl:
-                result = repl.verify(code)
+                try:
+                    result = repl.verify(code)
+                except Exception as e:
+                    result = FailedResult(errors=[f"repl error: {e!r}"])
+                    try:
+                        repl.stop()
+                        repl.start()
+                    except Exception:
+                        pass
             with lock:
                 results[i] = result
 
@@ -70,4 +89,4 @@ class ReplPool:
             t.start()
         for t in threads:
             t.join()
-        return results
+        return [r if r is not None else FailedResult(errors=["no result"]) for r in results]
