@@ -5,6 +5,7 @@ import torch
 from tokenizers import ByteLevelBPETokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from leangpt.gen_dump import GenDump
 from leangpt.config import load_config
 from leangpt.curriculum import curriculum_batch, eval_batch, should_advance
 from leangpt.dashboard import Dashboard
@@ -35,6 +36,8 @@ def main() -> None:
         )
     )
     gen.load()
+    dump = GenDump(gen, Path(cfg.results_jsonl).parent / "generated")   # сразу после gen.load()
+
     ref_model = LeanGPT(gen._model.cfg)
     ref_model.load_state_dict(gen._model.state_dict())
     ref_model.eval()
@@ -54,6 +57,7 @@ def main() -> None:
         env_file=cfg.env_import,
     ) as repl_pool, Dashboard() as dash:
         while level <= MAX_LEVEL:
+            dump.level = level
             statements = curriculum_batch(level, n_per_level=20)
             advanced = False
             for round_i in range(N_ROUNDS_PER_LEVEL):
