@@ -5,6 +5,7 @@ import torch
 from tokenizers import ByteLevelBPETokenizer
 from .device import pick_device
 from .model import LeanGPT, ModelConfig
+import os
 
 
 @dataclass
