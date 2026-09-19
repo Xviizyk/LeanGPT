@@ -32,6 +32,8 @@ class LeanGenerator:
             f"{self.cfg.tokenizer_dir}/vocab.json",
             f"{self.cfg.tokenizer_dir}/merges.txt",
         )
+        torch.serialization.add_safe_globals([ModelConfig])
+        
         ckpt = torch.load(self.cfg.checkpoint_path, map_location=self.cfg.device)
         model_cfg: ModelConfig = ckpt["config"]
         self._model = LeanGPT(model_cfg).to(self.cfg.device)
