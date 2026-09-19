@@ -36,7 +36,7 @@ def main() -> None:
         )
     )
     gen.load()
-    dump = GenDump(gen, Path(cfg.results_jsonl).parent / "generated")   # сразу после gen.load()
+    dump = GenDump(gen, Path(cfg.results_jsonl).parent / "generated") 
 
     ref_model = LeanGPT(gen._model.cfg)
     ref_model.load_state_dict(gen._model.state_dict())
@@ -73,8 +73,11 @@ def main() -> None:
                         tokenizer,
                     )
                     n_tok, dt = gen.last_gen_stats
+                    res = grpo_step(statement, gen, ref_model, repl_pool, optim, train_store, RLConfig(), tokenizer)
+                    step += 1
+                    n_tok, dt = gen.last_gen_stats
                     dash.record_generation(n_tok, dt)
-                    dash.record_attempt(statement, level, ok=True)
+                    dash.record_attempt(statement, level, ok=res.ok)
                 if round_i % EVAL_EVERY_N_ROUNDS == 0:
                     eval_statements = eval_batch(level, n=10)
                     eval_rate = evaluate(eval_statements, gen, repl_pool, eval_store)
