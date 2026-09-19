@@ -1,8 +1,9 @@
-data/
-proof_library/
+# data/
+# proof_library/
+data/lean_corpus/
+data/corpus*
 proofs_dump_repo/
 *.jsonl
-*.pt
 config.local.yaml
 .env
 .bot_state
