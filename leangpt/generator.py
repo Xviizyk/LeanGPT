@@ -27,6 +27,7 @@ class LeanGenerator:
         self.last_gen_stats: tuple[int, float] = (0, 0.0)
 
     def load(self) -> None:
+        print(f"[DEBUG] Попытка загрузить токенизатор из папки: {os.path.abspath(self.cfg.tokenizer_dir)}")
         self._tokenizer = ByteLevelBPETokenizer(
             f"{self.cfg.tokenizer_dir}/vocab.json",
             f"{self.cfg.tokenizer_dir}/merges.txt",
